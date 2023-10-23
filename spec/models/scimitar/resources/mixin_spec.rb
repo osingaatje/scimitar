@@ -406,8 +406,8 @@ RSpec.describe Scimitar::Resources::Mixin do
               'userName'     => 'foo',
               'name'         => {'givenName' => 'Foo', 'familyName' => 'Bar'},
               'active'       => true,
-              'emails'       => [{'type' => 'work',  'primary' => true,  'value' => 'foo.bar@test.com'}],
-              'phoneNumbers' => [{'type' => 'work',  'primary' => false, 'value' => '+642201234567'   }],
+              'emails'       => [{'type' => 'work',  'primary' => true,  'value' => 'foo.bar@test.com'  }],
+              'phoneNumbers' => [{'type' => 'work',  'primary' => false, 'value' => '+642201234567'     }],
               'groups'       => [{'type' => 'Group', 'value' => '1'}, {'type' => 'Group', 'value' => '2'}],
               'id'           => '42', # Note, String
               'externalId'   => 'AA02984',
@@ -518,6 +518,108 @@ RSpec.describe Scimitar::Resources::Mixin do
         expect(instance.work_email_address).to be_nil
         expect(instance.home_email_address).to be_nil
         expect(instance.work_phone_number ).to be_nil
+      end
+
+
+      context 'extended schema' do
+        CustomSchema = Class.new(Scimitar::Schema::Base) do
+          def self.id
+            'custom-id'
+          end
+  
+          def self.scim_attributes
+            [ Scimitar::Schema::Attribute.new(name: 'name', type: 'string') ]
+          end
+        end
+
+        ExtensionSchema = Class.new(Scimitar::Schema::Base) do
+          def initialize(options ={})
+            super(name: 'ExtensionSchema',
+                  id: self.class.id,
+                  description: 'Represents extra info about a user',
+                  scim_attributes: self.class.scim_attributes)
+          end
+        
+          def self.id
+            'extend_schema'
+          end
+        
+          def self.scim_attributes
+            [
+              Scimitar::Schema::Attribute.new(name: 'relationship', type: 'string', required: false),
+              Scimitar::Schema::Attribute.new(name: 'related_users', multiValued: true, complexType: Scimitar::ComplexTypes::ReferenceMember, required: false)
+            ]
+          end
+        end
+
+        let(:resource_class) {
+          ResourceClass = Class.new(Scimitar::Resources::Base) do
+            attr_accessor :name, :relationship, :related_users
+
+            set_schema CustomSchema
+            extend_schema ExtensionSchema
+  
+            def self.endpoint
+              '/extendedschema'
+            end
+  
+            def self.resource_type_id
+              'CustomResource'
+            end
+            # hacky methods to get MixIn to work, purely so we can test the 'from_scim!' with an extended schema
+            def self.scim_resource_type
+              return self
+            end
+
+            def self.scim_attributes_map
+              return {
+                name: :name,
+                relationship: :relationship,
+                related_users: [
+                  list: :related_users,
+                  find_with: ->(entry) { 
+                    MockMember.find_by(scim_uid: entry['value'])
+                  }
+                ]
+              }
+            end
+            def self.scim_mutable_attributes
+              return nil
+            end
+            def self.scim_queryable_attributes
+              return nil
+            end
+            include Scimitar::Resources::Mixin
+          end
+        }
+        let(:mock_member1) { MockMember.create!(scim_uid: 'scim-25664356', username: 'tEstUserN@me1') }
+        let(:mock_member2) { MockMember.create!(scim_uid: 'scim-34532454', username: 't#stUserN@me2') }
+
+        it 'correctly parses extended schema attributes' do
+          mock_members = [mock_member1, mock_member2] # initialise the mock members
+
+          hash = {
+            'name' => 'custom name',
+            'schemas' => ['custom-id', 'extend_schema'],
+            'extend_schema' => {
+              'relationship' => 'custom relationship',
+              'related_users' => mock_members.map { 
+                |m| { 'value' => m.scim_uid }
+              }
+            }
+          }
+
+          instance = resource_class.new
+          
+          instance.from_scim!(scim_hash: hash)
+          expect(instance.name).to eql('custom name')
+          expect(instance.relationship).to eql('custom relationship')
+
+          expect(instance).to be_valid
+
+          expect(instance.related_users).to all(be_a(MockMember))
+          expect(instance.related_users).to match_array(mock_members)
+        end
       end
     end # "context '#from_scim!' do"
 
