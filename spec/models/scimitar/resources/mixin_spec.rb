@@ -524,7 +524,7 @@ RSpec.describe Scimitar::Resources::Mixin do
       context 'extended schema' do
         CustomSchema = Class.new(Scimitar::Schema::Base) do
           def self.id
-            'custom-id'
+            'some-custom-id'
           end
   
           def self.scim_attributes
@@ -532,9 +532,9 @@ RSpec.describe Scimitar::Resources::Mixin do
           end
         end
 
-        ExtensionSchema = Class.new(Scimitar::Schema::Base) do
+        RelatedUsersExtensionSchema = Class.new(Scimitar::Schema::Base) do
           def initialize(options ={})
-            super(name: 'ExtensionSchema',
+            super(name: 'RelatedUsersExtensionSchema',
                   id: self.class.id,
                   description: 'Represents extra info about a user',
                   scim_attributes: self.class.scim_attributes)
@@ -557,7 +557,7 @@ RSpec.describe Scimitar::Resources::Mixin do
             attr_accessor :name, :relationship, :related_users
 
             set_schema CustomSchema
-            extend_schema ExtensionSchema
+            extend_schema RelatedUsersExtensionSchema
   
             def self.endpoint
               '/extendedschema'
